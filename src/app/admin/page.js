@@ -62,26 +62,40 @@ export default function AdminDashboard() {
 
     setUploadingFile(true);
 
-    try {
-      // 1. Upload the image file to Supabase Storage bucket
+  try {
+      // 1. Generate a clean, unique file name from your device file picker selection
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-      const filePath = `vault-${fileName}`;
+      
+      // CRUCIAL: Remove any folder prefixes. Just upload the filename directly.
+      const filePath = fileName; 
 
+      // 2. Execute the actual upload to your public bucket
       const { error: uploadError, data: uploadData } = await supabase.storage
         .from('screenshots')
-        .upload(filePath, selectedFile);
+        .upload(filePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Storage Upload Error Context:", uploadError);
+        throw new Error(`Storage upload failed: ${uploadError.message}`);
+      }
 
-      // 2. Generate Public URL for the uploaded image file assets 
+      // 3. Fetch the absolute public web link for that file asset
       const { data: urlData } = supabase.storage
         .from('screenshots')
         .getPublicUrl(filePath);
 
-      const computedScreenshotUrl = urlData.publicUrl;
+      if (!urlData || !urlData.publicUrl) {
+        throw new Error("Supabase failed to generate a public link structure.");
+      }
 
-      // 3. Write subscription data records inside database table configuration mappings
+      const computedScreenshotUrl = urlData.publicUrl;
+      console.log("Generated Public URL to be saved:", computedScreenshotUrl);
+
+      // 4. Write data variables into your database table fields mapping
       const { error: dbError } = await supabase.from('subscriptions').insert([
         {
           title: formData.title,
@@ -94,7 +108,6 @@ export default function AdminDashboard() {
       ]);
 
       if (dbError) throw dbError;
-
       setFormSuccess('New channel option and device media uploaded successfully!');
       setFormData({ title: '', category_name: '', video_quantity: '', original_rate: '', discount_percentage: '0' });
       setSelectedFile(null);
